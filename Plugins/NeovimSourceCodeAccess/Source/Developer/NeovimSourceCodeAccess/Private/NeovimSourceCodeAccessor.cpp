@@ -58,7 +58,8 @@ bool FNeovimSourceCodeAccessor::OpenFileAtLine(const FString& FullPath, int32 Li
         return false;
 
 #if PLATFORM_WINDOWS
-    // On Windows, use --remote-send with :edit command to avoid argument parsing issues
+    // On Windows, use --remote-send with :tabedit command to avoid argument parsing issues
+    // and open in a new tab so user's current work isn't displaced
     // Convert backslashes to forward slashes (vim handles these on Windows)
     FString VimPath = FullPath.Replace(TEXT("\\"), TEXT("/"));
     // Escape spaces for vim command line
@@ -67,18 +68,18 @@ bool FNeovimSourceCodeAccessor::OpenFileAtLine(const FString& FullPath, int32 Li
     FString VimCommand;
     if (LineNumber > 0)
     {
-        // <C-\><C-n> ensures normal mode, then :edit +line path
-        VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:edit +%d %s<CR>\""), LineNumber, *VimPath);
+        // <C-\><C-n> ensures normal mode, then :tabedit +line path
+        VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:tabedit +%d %s<CR>\""), LineNumber, *VimPath);
         if (ColumnNumber > 0)
         {
             // Add cursor positioning after file loads
-            VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:edit +%d %s<CR>:call cursor(%d,%d)<CR>\""),
+            VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:tabedit +%d %s<CR>:call cursor(%d,%d)<CR>\""),
                 LineNumber, *VimPath, LineNumber, ColumnNumber);
         }
     }
     else
     {
-        VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:edit %s<CR>\""), *VimPath);
+        VimCommand = FString::Printf(TEXT("\"<C-\\\\><C-n>:tabedit %s<CR>\""), *VimPath);
     }
 
     return NeovimExecute(TEXT("remote-send"), *VimCommand);
