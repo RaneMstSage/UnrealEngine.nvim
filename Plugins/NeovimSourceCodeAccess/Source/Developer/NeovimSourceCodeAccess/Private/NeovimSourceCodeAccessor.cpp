@@ -115,7 +115,34 @@ bool FNeovimSourceCodeAccessor::NeovimExecute(const TCHAR* Command, const TCHAR*
 {
     if (!RemoteServer.IsEmpty())
     {
-        FString RemoteArgs = FString::Printf(TEXT("--server \"%s\" --%s %s"), *RemoteServer, Command, Arguments);
+        // Use --headless to prevent nvim from opening a window when sending remote commands
+        FString RemoteArgs = FString::Printf(TEXT("--headless --server \"%s\" --%s %s"), *RemoteServer, Command, Arguments);
+
+#if PLATFORM_WINDOWS
+        // On Windows, use CreateProc for non-blocking execution
+        // ExecProcess blocks until the process exits, which freezes Unreal
+        FProcHandle ProcHandle = FPlatformProcess::CreateProc(
+            *Application,
+            *RemoteArgs,
+            true,   // bLaunchDetached - run independently
+            true,   // bLaunchHidden - no console window
+            false,  // bLaunchReallyHidden
+            nullptr, // OutProcessID
+            0,      // PriorityModifier
+            nullptr, // OptionalWorkingDirectory
+            nullptr  // PipeWriteChild
+        );
+
+        bool bSuccess = ProcHandle.IsValid();
+        if (bSuccess)
+        {
+            // Close the handle immediately - we don't need to track the process
+            FPlatformProcess::CloseProc(ProcHandle);
+            UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("%s: %s %s"), *RemoteServer, *Application, *RemoteArgs);
+            return true;
+        }
+#else
+        // On Linux/Mac, ExecProcess with --remote typically returns quickly
         bool bSuccess = FPlatformProcess::ExecProcess(
             *Application,
             *RemoteArgs,
@@ -128,6 +155,7 @@ bool FNeovimSourceCodeAccessor::NeovimExecute(const TCHAR* Command, const TCHAR*
             UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("%s: %s %s"), *RemoteServer, *Application, *RemoteArgs);
             return true;
         }
+#endif
     }
 
     UE_LOG(LogNeovimSourceCodeAccess, Warning, TEXT("Failed to communicate with Neovim, try launching UE via UnrealEngine.nvim"));
