@@ -57,25 +57,32 @@ bool FNeovimSourceCodeAccessor::OpenFileAtLine(const FString& FullPath, int32 Li
     if (FullPath.IsEmpty())
         return false;
 
-    FString Arguments;
+    // Use remote-send with :edit command instead of --remote for better Windows compatibility
+    // Escape backslashes and spaces for Vimscript
+    FString EscapedPath = FullPath.Replace(TEXT("\\"), TEXT("/"));
+    // Escape spaces with backslash for vim command line
+    EscapedPath = EscapedPath.Replace(TEXT(" "), TEXT("\\ "));
 
+    FString VimCommand;
     if (LineNumber > 0)
     {
         if (ColumnNumber > 0)
         {
-            Arguments = FString::Printf(TEXT("+%d:%d \"%s\""), LineNumber, ColumnNumber, *FullPath);
+            // :edit +line file then move to column
+            VimCommand = FString::Printf(TEXT("\"<C-\\><C-n>:edit +%d %s<CR>:normal! %d|<CR>\""), LineNumber, *EscapedPath, ColumnNumber);
         }
         else
         {
-            Arguments = FString::Printf(TEXT("+%d \"%s\""), LineNumber, *FullPath);
+            VimCommand = FString::Printf(TEXT("\"<C-\\><C-n>:edit +%d %s<CR>\""), LineNumber, *EscapedPath);
         }
     }
     else
     {
-        Arguments = FString::Printf(TEXT("\"%s\""), *FullPath);
+        VimCommand = FString::Printf(TEXT("\"<C-\\><C-n>:edit %s<CR>\""), *EscapedPath);
     }
 
-    return NeovimExecute(TEXT("remote"), *Arguments);
+    UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("OpenFileAtLine: %s Line:%d Col:%d -> %s"), *FullPath, LineNumber, ColumnNumber, *VimCommand);
+    return NeovimExecute(TEXT("remote-send"), *VimCommand);
 }
 
 bool FNeovimSourceCodeAccessor::OpenSourceFiles(const TArray<FString>& AbsoluteSourcePaths)
@@ -115,33 +122,34 @@ bool FNeovimSourceCodeAccessor::NeovimExecute(const TCHAR* Command, const TCHAR*
 {
     if (!RemoteServer.IsEmpty())
     {
-        // Use --headless to prevent nvim from opening a window when sending remote commands
-        FString RemoteArgs = FString::Printf(TEXT("--headless --server \"%s\" --%s %s"), *RemoteServer, Command, Arguments);
-
 #if PLATFORM_WINDOWS
-        // On Windows, use CreateProc for non-blocking execution
-        // ExecProcess blocks until the process exits, which freezes Unreal
-        FProcHandle ProcHandle = FPlatformProcess::CreateProc(
+        // On Windows, use ExecProcess directly without cmd.exe to avoid shell quoting issues
+        // Don't quote the server path - ExecProcess handles argument passing correctly
+        FString RemoteArgs = FString::Printf(TEXT("--server %s --%s %s"), *RemoteServer, Command, Arguments);
+        UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("Executing: %s %s"), *Application, *RemoteArgs);
+
+        int32 ReturnCode = 0;
+        FString StdOut;
+        FString StdErr;
+
+        bool bSuccess = FPlatformProcess::ExecProcess(
             *Application,
             *RemoteArgs,
-            true,   // bLaunchDetached - run independently
-            true,   // bLaunchHidden - no console window
-            false,  // bLaunchReallyHidden
-            nullptr, // OutProcessID
-            0,      // PriorityModifier
-            nullptr, // OptionalWorkingDirectory
-            nullptr  // PipeWriteChild
-        );
+            &ReturnCode,
+            &StdOut,
+            &StdErr);
 
-        bool bSuccess = ProcHandle.IsValid();
-        if (bSuccess)
+        if (bSuccess && ReturnCode == 0)
         {
-            // Close the handle immediately - we don't need to track the process
-            FPlatformProcess::CloseProc(ProcHandle);
-            UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("%s: %s %s"), *RemoteServer, *Application, *RemoteArgs);
+            UE_LOG(LogNeovimSourceCodeAccess, Log, TEXT("Successfully executed nvim remote command"));
             return true;
         }
+        else
+        {
+            UE_LOG(LogNeovimSourceCodeAccess, Error, TEXT("nvim failed: code=%d stdout=%s stderr=%s"), ReturnCode, *StdOut, *StdErr);
+        }
 #else
+        FString RemoteArgs = FString::Printf(TEXT("--server \"%s\" --%s %s"), *RemoteServer, Command, Arguments);
         // On Linux/Mac, ExecProcess with --remote typically returns quickly
         bool bSuccess = FPlatformProcess::ExecProcess(
             *Application,
