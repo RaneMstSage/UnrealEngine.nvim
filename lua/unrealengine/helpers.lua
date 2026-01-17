@@ -546,7 +546,7 @@ function M.link_clangd_cc(opts, exit_code)
     local uproject_dir = M.normalize_path(opts.uproject_path and vim.fn.fnamemodify(opts.uproject_path, ":h") or vim.loop.cwd())
     local dest = M.normalize_path(uproject_dir .. M.slash .. cc_file)
 
-    m.symlink_file(source, dest)
+    M.symlink_file(source, dest)
 end
 
 --- Ensure directory exists (mkdir -p)
