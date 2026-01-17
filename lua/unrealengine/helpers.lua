@@ -381,6 +381,7 @@ function M.execute_generate_clangdb(opts, on_complete)
     local uproject_path = M.normalize_path(uproject.path)
 
     -- Use array to avoid Windows quote parsing issues
+    local editor_target = M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor")
     local cmd
     if jit.os == "Windows" then
         cmd = {
@@ -389,7 +390,7 @@ function M.execute_generate_clangdb(opts, on_complete)
             script,
             "-mode=GenerateClangDatabase",
             "-project=" .. uproject_path,
-            uproject.name .. "Editor",
+            editor_target,
             M.get_platform(),
             opts.build_type or "Development",
         }
@@ -398,7 +399,7 @@ function M.execute_generate_clangdb(opts, on_complete)
             script,
             "-mode=GenerateClangDatabase",
             "-project=" .. uproject_path,
-            uproject.name .. "Editor",
+            editor_target,
             M.get_platform(),
             opts.build_type or "Development",
         }
