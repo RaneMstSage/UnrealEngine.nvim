@@ -212,7 +212,7 @@ function M.wrap(value)
 end
 
 --- Executes the given command in a split buffer
----@param cmd string The command to run
+---@param cmd string|string[] The command to run (string or array)
 ---@param opts UnrealEngine.Opts Options table
 ---@param on_complete? fun(opts: UnrealEngine.Opts) on_complete
 function M.execute_command(cmd, opts, on_complete)
@@ -306,15 +306,27 @@ function M.execute_build_script(args, opts, on_complete)
         return
     end
 
-    local cmd = {
-        M.wrap(script),
-        uproject.name .. "Editor",
-        M.get_platform(),
-        opts.build_type or "Development",
-        (args or "") .. M.wrap(uproject.path),
-        "-game -engine",
-        (opts.with_editor and "-Editor " or ""),
-    }
+    local cmd
+    if jis.os == "Windows" then
+        cmd = {
+            "cmd.exe",
+            "/c",
+            script,
+            "-mode=GenerateClangDatabase",
+            "-project=" .. uproject_path,
+            uproject.name .. "Editor",
+            M.get_platform,
+            opts.build_type or "Development",
+        }
+    else
+        cmd = {
+            "-mode=GenerateClangDatabase",
+            "-project=" .. uproject_path,
+            uproject.name .. "Editor",
+            M.get_platform(),
+            opts.build_type or "Development"
+        }
+    end
 
     local cc_path = opts.engine_path .. M.slash .. "compile_commands.json"
     if vim.loop.fs_stat(cc_path) then
@@ -344,20 +356,31 @@ function M.execute_generate_clangdb(opts, on_complete)
 
     local uproject_path = M.normalize_path(uproject.path)
 
-    -- 
-    -- Correct argument order for GenerateClangDatabase mode:
-    -- Build.bat -mode=GenerateClangDatabase -project="path.uproject" TargetEditor Platform BuildType
-    local cmd = {
-        M.wrap(script),
-        "-mode=GenerateClangDatabase",
-        "-project=" .. M.wrap(uproject_path),
-        M.wrap(uproject.name .. "Editor"),
-        M.get_platform(),
-        opts.build_type or "Development",
-    }
+    -- Use array to avoid Windows quote parsing issues
+    local cmd
+    if jit.os == "Windows" then
+        cmd = {
+            "cmd.exe",
+            "/c",
+            script,
+            "-mode=GenerateClangDatabase",
+            "-project=" .. uproject_path,
+            uproject.name .. "Editor",
+            M.get_platform(),
+            opts.build_type or "Development",
+        }
+    else
+        cmd = {
+            script,
+            "-mode=GenerateClangDatabase",
+            "-project=" .. uproject_path,
+            uproject.name .. "Editor",
+            M.get_platform(),
+            opts.build_type or "Development",
+        }
+    end
 
-    local formatted_cmd = table.concat(cmd, " ")
-    M.execute_command((jit.os == "Windows") and ("cmd /c " .. formatted_cmd) or formatted_cmd, opts, on_complete)
+    M.execute_command(cmd, opts, on_complete)
 end
 
 --- Open Unreal Editor, if opts.uproject_path is set, it will launch with that project
