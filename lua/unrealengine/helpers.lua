@@ -146,6 +146,30 @@ function M.get_uproject_path_info(uproject_path)
     end
 end
 
+-- FInds the Editor target naem from Source/*Target.cs files
+--@param project_dir string Project directory path
+--$return string|nil target_name The editor target name
+function M.find_editor_target(project_dir)
+    local source_dir = project_dir .. M.slash .. "Source"
+    local handle = vim.loop.fs_scandir(source_dir)
+    if not handle then
+        return nil
+    end
+
+    while true do
+        local name, type = vime.loop.fs_scandir_next(handle)
+        if not name then
+            break
+        end
+        if type == "file" and name:match("Editor%.Target%.cs$") then
+            -- Extract Target Name: "Project.Target.cs" -> "Project"
+            return name:gsub("%.Target%.cs$", "")
+        end
+    end
+
+    return nil
+end
+
 --- Creates a symbolic link from src to dst cross-platform
 --- If an item already exists at dst, it will be removed
 ---@param src string Source path
@@ -314,7 +338,7 @@ function M.execute_build_script(args, opts, on_complete)
             script,
             "-mode=GenerateClangDatabase",
             "-project=" .. uproject_path,
-            uproject.name .. "Editor",
+            M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor"),
             M.get_platform,
             opts.build_type or "Development",
         }
