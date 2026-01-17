@@ -330,27 +330,16 @@ function M.execute_build_script(args, opts, on_complete)
         return
     end
 
-    local cmd
-    if jit.os == "Windows" then
-        cmd = {
-            "cmd.exe",
-            "/c",
-            script,
-            "-mode=GenerateClangDatabase",
-            "-project=" .. uproject_path,
-            M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor"),
-            M.get_platform,
-            opts.build_type or "Development",
-        }
-    else
-        cmd = {
-            "-mode=GenerateClangDatabase",
-            "-project=" .. uproject_path,
-            M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor"),
-            M.get_platform(),
-            opts.build_type or "Development"
-        }
-    end
+    local editor_target = M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor")
+    local cmd = {
+        M.wrap(script),
+        M.wrap(editor_target),
+        M.get_platform(),
+        opts.build_type or "Development",
+        (args or "") .. M.wrap(uproject.path),
+        "-game -engine",
+        (opts.with_editor and "-Editor " or ""),
+    }
 
     local cc_path = opts.engine_path .. M.slash .. "compile_commands.json"
     if vim.loop.fs_stat(cc_path) then
