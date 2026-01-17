@@ -308,7 +308,7 @@ function M.execute_build_script(args, opts, on_complete)
 
     local cmd = {
         M.wrap(script),
-        M.wrap(uproject.name .. "Editor"),
+        uproject.name .. "Editor",
         M.get_platform(),
         opts.build_type or "Development",
         (args or "") .. M.wrap(uproject.path),
