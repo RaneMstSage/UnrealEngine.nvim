@@ -331,24 +331,48 @@ function M.execute_build_script(args, opts, on_complete)
     end
 
     local editor_target = M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor")
-    local cmd = {
-        M.wrap(script),
-        M.wrap(editor_target),
-        M.get_platform(),
-        opts.build_type or "Development",
-        (args or "") .. M.wrap(uproject.path),
-        "-game -engine",
-        (opts.with_editor and "-Editor " or ""),
-    }
+    local uproject_path = M.normalize_path(uproject.path)
+
+    -- Use array to avoid Windows quote parsing issues
+    local cmd
+    if jit.os == "Windows" then
+        cmd = {
+            "cmd.exe",
+            "/c",
+            script,
+            editor_target,
+            M.get_platform(),
+            opts.build_type or "Development",
+            "-project=" .. uproject_path,
+            "-game",
+            "-engine",
+        }
+    else
+        cmd = {
+            script,
+            editor_target,
+            M.get_platform(),
+            opts.build_type or "Development",
+            "-project=" .. uproject_path,
+            "-game",
+            "-engine",
+        }
+    end
+
+    if opts.with_editor then
+        table.insert(cmd, "-Editor")
+    end
+
+    if args and args ~= "" then
+        table.insert(cmd, args)
+    end
 
     local cc_path = opts.engine_path .. M.slash .. "compile_commands.json"
     if vim.loop.fs_stat(cc_path) then
         table.insert(cmd, "-NoExecCodeGenActions")
     end
 
-    local formatted_cmd = table.concat(cmd, " ")
-
-    M.execute_command((jit.os == "Windows") and ("cmd /c " .. formatted_cmd) or formatted_cmd, opts, on_complete)
+    M.execute_command(cmd, opts, on_complete)
 end
 
 -- Executes the build script for GenerateClangDatabase mode with correct argument order
