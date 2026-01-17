@@ -331,7 +331,7 @@ function M.execute_build_script(args, opts, on_complete)
     end
 
     local cmd
-    if jis.os == "Windows" then
+    if jit.os == "Windows" then
         cmd = {
             "cmd.exe",
             "/c",
@@ -346,7 +346,7 @@ function M.execute_build_script(args, opts, on_complete)
         cmd = {
             "-mode=GenerateClangDatabase",
             "-project=" .. uproject_path,
-            uproject.name .. "Editor",
+            M.find_editor_target(uproject.cwd) or (uproject.name .. "Editor"),
             M.get_platform(),
             opts.build_type or "Development"
         }
