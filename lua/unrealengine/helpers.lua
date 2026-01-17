@@ -7,8 +7,19 @@ local find_uproject_cache = {}
 local current_build_job = nil
 local job_queue = {}
 
+-- Normalize path separators for the curren OS
+-- @param path string
+-- @return string
+function M.normalize_path(path)
+    if jit.os == "Windows" then
+        return path:gsub("/", "\\")
+    else
+        return path:gsub("\\", "/")
+    end
+end
+
 --- Validates and returns a valid engine path
----@param directory string Directory
+--- @param directory string Directory
 function M.find_uproject(directory)
     if find_uproject_cache[directory] then
         return find_uproject_cache[directory]
@@ -255,12 +266,16 @@ function M.execute_command(cmd, opts, on_complete)
         if #job_queue > 0 then
             local next_job = table.remove(job_queue, 1)
             vim.schedule(function()
-                M.execute_build_script(next_job.args, next_job.opts)
+                if next_job.generate_clangdb then
+                    M.execute_generate_clangdb(next_job.opts, next_job.on_complete)
+                else
+                    M.execute_build_script(next_job.args, next_job.opts, next_job.on_complete)
+                end
             end)
         end
 
         if on_complete then
-            on_complete(opts)
+            on_complete(opts, exit_code)
         end
     end
 
@@ -308,6 +323,40 @@ function M.execute_build_script(args, opts, on_complete)
 
     local formatted_cmd = table.concat(cmd, " ")
 
+    M.execute_command((jit.os == "Windows") and ("cmd /c " .. formatted_cmd) or formatted_cmd, opts, on_complete)
+end
+
+-- Executes the build script for GenerateClangDatabase mode with correct argument order
+-- @param opts UnrealEngine.Opts Options table
+-- @param on_complete? fun(opts: UnrealEngine.Opts, exit_code: number) on_complete
+function M.execute_generate_clangdb(opts, on_complete)
+    if current_build_job then
+        table.insert(job_queue, { generate_clangdb = true, opts = opts, on_complete = on_complete })
+        return
+    end
+
+    local script = M.get_build_script_path(opts)
+    local uproject = M.get_uproject_path_info(opts.uproject_path)
+    if not uproject then
+        vim.notify("No uproject found", vim.log.levels.ERROR)
+        return
+    end
+
+    local uproject_path = M.normalize_path(uproject.path)
+
+    -- 
+    -- Correct argument order for GenerateClangDatabase mode:
+    -- Build.bat -mode=GenerateClangDatabase -project="path.uproject" TargetEditor Platform BuildType
+    local cmd = {
+        M.wrap(script),
+        "-mode=GenerateClangDatabase",
+        "-project=" .. M.wrap(uproject_path),
+        M.wrap(uproject.name .. "Editor"),
+        M.get_platform(),
+        opts.build_type or "Development",
+    }
+
+    local formatted_cmd = table.concat(cmd, " ")
     M.execute_command((jit.os == "Windows") and ("cmd /c " .. formatted_cmd) or formatted_cmd, opts, on_complete)
 end
 
@@ -432,14 +481,24 @@ end
 
 --- Link clangd compile_commands.json to project and nested plugins
 ---@param opts UnrealEngine.Opts Options table
-function M.link_clangd_cc(opts)
+function M.link_clangd_cc(opts, exit_code)
+    if exit_code and exit_code ~= 0 then
+        vim.notify("GenerateClangDatabase failed, skipping symlink", vim.log.levels.WARN)
+        return
+    end
+
     local cc_file = "compile_commands.json"
-    cc_file = M.slash .. cc_file
+    local source = M.normalize_path(opts.engine_path .. M.slash .. cc_file)
 
-    local source = opts.engine_path .. cc_file
-    local uproject_dir = (opts.uproject_path and vim.fn.fnamemodify(opts.uproject_path, ":h") or vim.loop.cwd())
+    if not vim.loop.fs_stat(source) then
+        vim.notify("compile_commands.json not found at: " .. source, vim.log.levels.WARN)
+        return
+    end
 
-    M.symlink_file(source, uproject_dir .. cc_file)
+    local uproject_dir = M.normalize_path(opts.uproject_path and vim.fn.fnamemodify(opts.uproject_path, ":h") or vim.loop.cwd())
+    local dest = M.normalize_path(uproject_dir .. M.slash .. cc_file)
+
+    m.symlink_file(source, dest)
 end
 
 --- Ensure directory exists (mkdir -p)
